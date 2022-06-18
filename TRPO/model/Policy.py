@@ -43,8 +43,61 @@ class CirticModel(nn.Module):
         return x
 
 class Policy():
-    def __init__(self,input_n,output_n):
+    def __init__(self,input_n,output_n,gamma,lamda):
         self.critic = CirticModel(input_n,output_n)#状态价值网络用来求优势函数
         self.actor = ActorModel(input_n,output_n)#策略网络
         self.old_actor = ActorModel(input_n,output_n)#备份的策略网络用于更新
+        self.old_actor.load_state_dict(self.actor.state_dict())#让两个网络参数保持一致
         self.critic_optim = optim.Adam(self.net.parameters(),lr=0.01)#状态价值使用Adam优化器
+        self.critic_loss = nn.MSELoss(reduction='sum')
+        self.reward = []#记录奖励回报
+        self.log_prob = []#记录动作log概率
+        self.state = []#记录状态用来更新critic
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.gamma = gamma#折扣累计回报
+        self.lamda = lamda#gae参数
+        self.eps = np.finfo(np.float32).eps.item()
+
+    def get_gae(self):
+        # gae方法计算优势函数
+        # 为了减少传递参数在这个函数中进行crtic的更新
+        state_tensor = torch.tensor(self.state).to(self.device)#将状态转成tensor
+        critic_value = self.critic(state_tensor)#获得状态价值
+        reward_tensor = torch.tensor(self.reward).to(self.device)#将reward转成tensor
+        returns = torch.zeros_like(reward_tensor)
+        advants = torch.zeros_like(reward_tensor)
+        #计算gae中间参数
+        tmp_return = 0
+        pre_value = 0
+        tmp_advants = 0
+        for t in reversed(range(0, len(reward_tensor))):#从后往前来
+            tmp_return = reward_tensor[t] + self.gamma*tmp_return
+            tmp_tderror = reward_tensor[t] + self.gamma*pre_value - critic_value[t]
+            tmp_advants = tmp_tderror + self.gamma*self.lamda*tmp_advants
+            returns[t] = tmp_return
+            advants[t] = tmp_advants
+            pre_value = critic_value[t]
+
+        advants = (advants - advants.mean()) / (advants.std() + self.eps)#将优势函数归一化
+        self.train_crtic(critic_value,returns)#更新状态网络
+        return advants
+
+    def train_crtic(self,predict,returns):
+        loss = self.critic_loss(predict,returns)
+        self.critic_optim.zero_grad()
+        loss.backward()
+        self.critic_optim.step()
+
+    def train_actor(self):
+        advants = self.get_gae()#计算gae并更新crtic
+        #计算l函数
+        logprob_tensor = torch.tensor(self.log_prob).to(self.device)
+        actor_loss = logprob_tensor*advants
+        actor_loss = actor_loss.mean()
+        #计算l的梯度
+        actor_grad = torch.autograd.grad(actor_loss,self.actor.parameters())
+        actor_grad = torch.flatten(actor_grad)#将梯度展成1维
+        #共轭梯度法得到更新方向
+        
+
+        

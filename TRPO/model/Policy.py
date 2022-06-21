@@ -12,7 +12,7 @@ class ActorModel(nn.Module):
         super().__init__()
         self.input = nn.Linear(input_n,64)#输入层
         self.mu_layer = nn.Linear(64,output_n)#策略分布均值的输出
-        self.sigma = 1
+        self.sigma = 1 #方差先设定为固定值
         #self.sigma_layer = nn.Linear(64,output_n)#策略分布方差的输出
     
     def forward(self,state):
@@ -54,6 +54,7 @@ class Policy():
         self.reward = []#记录奖励回报
         self.log_prob = []#记录动作log概率
         self.state = []#记录状态用来更新critic
+        self.action = []#记录动作
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.gamma = gamma#折扣累计回报
         self.lamda = lamda#gae参数
@@ -89,9 +90,17 @@ class Policy():
         loss.backward()
         self.critic_optim.step()
 
+    def get_loss(self,advants,actor):
+        state_tensor = torch.tensor(self.state).to(self.device)#将状态转成tensor
+        logprob_tensor = torch.tensor(self.log_prob).to(self.device)#将对数概率转成tensor
+        action_tensor = torch.tensor(self.action).to(self.device)#将动作转成tensor
+        dist = actor.get_dist(state_tensor)
+        new_logprob = dist.log_prob(action_tensor)
+        return loss
+
     def train_actor(self):
         advants = self.get_gae()#计算gae并更新crtic
-        #计算l函数
+        #计算损失函数
         logprob_tensor = torch.tensor(self.log_prob).to(self.device)
         actor_loss = logprob_tensor*advants
         actor_loss = actor_loss.mean()

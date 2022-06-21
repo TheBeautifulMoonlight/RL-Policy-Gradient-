@@ -12,13 +12,14 @@ class ActorModel(nn.Module):
         super().__init__()
         self.input = nn.Linear(input_n,64)#输入层
         self.mu_layer = nn.Linear(64,output_n)#策略分布均值的输出
-        self.sigma_layer = nn.Linear(64,output_n)#策略分布方差的输出
+        self.sigma = 1
+        #self.sigma_layer = nn.Linear(64,output_n)#策略分布方差的输出
     
     def forward(self,state):
         x = self.input(state)
         x = F.relu(x)
         mu = F.sigmoid(self.mu_layer(x))
-        sigma = F.softplus(self.sigma_layer(x))
+        sigma = self.sigma#F.softplus(self.sigma_layer(x))
         return mu,sigma
 
     def get_dist(self,state):
@@ -48,7 +49,7 @@ class Policy():
         self.actor = ActorModel(input_n,output_n)#策略网络
         self.old_actor = ActorModel(input_n,output_n)#备份的策略网络用于更新
         self.old_actor.load_state_dict(self.actor.state_dict())#让两个网络参数保持一致
-        self.critic_optim = optim.Adam(self.net.parameters(),lr=0.01)#状态价值使用Adam优化器
+        self.critic_optim = optim.Adam(self.critic.parameters(),lr=0.01)#状态价值使用Adam优化器
         self.critic_loss = nn.MSELoss(reduction='sum')
         self.reward = []#记录奖励回报
         self.log_prob = []#记录动作log概率
@@ -98,6 +99,7 @@ class Policy():
         actor_grad = torch.autograd.grad(actor_loss,self.actor.parameters())
         actor_grad = torch.flatten(actor_grad)#将梯度展成1维
         #共轭梯度法得到更新方向
+        
         
 
         

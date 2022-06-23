@@ -85,29 +85,43 @@ class Policy():
         return advants
 
     def train_crtic(self,predict,returns):
+        #对状态网络进行更新
         loss = self.critic_loss(predict,returns)
         self.critic_optim.zero_grad()
         loss.backward()
         self.critic_optim.step()
 
-    def get_loss(self,advants,actor):
+    def get_loss(self,advants):
         state_tensor = torch.tensor(self.state).to(self.device)#将状态转成tensor
         logprob_tensor = torch.tensor(self.log_prob).to(self.device)#将对数概率转成tensor
         action_tensor = torch.tensor(self.action).to(self.device)#将动作转成tensor
-        dist = actor.get_dist(state_tensor)
+        dist = self.actor.get_dist(state_tensor)#得到当前策略分布
         new_logprob = dist.log_prob(action_tensor)
-        return loss
+        kl = new_logprob-logprob_tensor
+        dp_v = torch.exp(new_logprob-logprob_tensor)
+        loss = advants.unsqueeze(dim=-1)*dp_v
+        return loss.mean(),kl.mean()
+
+    def Fvp(self,kl,p):
+        p.detach()
+        grads = torch.autograd.grad(kl, self.actor.parameters(), create_graph=True)
+        grads = torch.flatten(grads)
+
+        grads_p = (grads*p).sum()
+        hessian_p = torch.autograd.grad(grads_p, self.actor.parameters(), create_graph=True)
+        hessian_p = torch.flatten(hessian_p)
+
+        return hessian_p+0.1*p
 
     def train_actor(self):
         advants = self.get_gae()#计算gae并更新crtic
         #计算损失函数
-        logprob_tensor = torch.tensor(self.log_prob).to(self.device)
-        actor_loss = logprob_tensor*advants
-        actor_loss = actor_loss.mean()
+        actor_loss,actor_kl = self.get_loss(advants)
         #计算l的梯度
         actor_grad = torch.autograd.grad(actor_loss,self.actor.parameters())
         actor_grad = torch.flatten(actor_grad)#将梯度展成1维
         #共轭梯度法得到更新方向
+        
         
         
 
